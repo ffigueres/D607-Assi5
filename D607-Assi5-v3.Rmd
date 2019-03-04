@@ -1,0 +1,130 @@
+---
+title: "Week 5 Assignment - Amwest vs Alaska"
+author: "Fernando Figueres"
+subtitle: "DATA-607, Spring 2019"
+output:
+  html_document:
+    theme: cerulean
+  word_document: default
+---
+
+#Data Import & Cleanup
+
+```{r library imports}
+suppressMessages(library(tidyverse))
+```
+
+As a first step before conducting our analysis, we should check whether the data is tidy and make the any necessary transformations.
+
+In this particular case there are two issues:
+
+  1. We have a column for each city, which spreads variables over multiple columns. In order for the data to be tidy, each variable should be listed on a single column.
+  
+  2. The "delayed" and "on time" variables are embedded in rows. We need to move these variables to their own columns.
+  
+The code for these two transformations is found below.
+
+```{r df1}
+df1 <-
+  read.table("flights.csv", sep = ",", header = TRUE) %>% # Import the CSV data
+  as_tibble() %>% # Convert to a tibble for easier on-screen reading
+  gather("city", "count", 3:7) %>% # 1. Move cities to rows, leaving flight counts on single column
+  spread("Status", "count") %>% # 2. Moves the status variables to their own columns
+  rename(airline = Airline, # make all variables lower-case
+  ontime = `on time`) %>% # remove the space for easier manipulation
+  mutate(totflights = ontime + delayed, # We create totflights by adding ontime and delayed
+  delayedprct = delayed / totflights) %>% #Delayedprct is calculated from delayed and totflights
+  arrange(desc(delayedprct)) # We sort by delayedprct
+
+(df1)
+```
+
+#Transformation & Analysis
+
+To conduct our analysis, we'll first create a graph that shows all flights for each destinations, separated by airline and status. For this we'll need to create an auxiliary data frame (graphdf) which has the status variables as rows.
+
+```{r graphdf}
+graphdf <-
+  read.table("flights.csv", sep = ",", header = TRUE) %>%
+  as_tibble() %>%
+  gather("city", "count", 3:7) %>%
+  rename(airline = Airline)
+
+head(graphdf)
+```
+
+Now that we have graphdf we can use GGPlot2 to create the stacked bar plot.
+
+```{r flight volume}
+p <- ggplot(graphdf, aes(x = airline, y = count,fill = Status))
+p <- p + scale_fill_manual(values=c('#8D0013','#01426A'))
+p <- p + geom_bar(stat = "identity", width = 0.95, position = "stack")
+p <- p + facet_grid(. ~ city)
+p
+```
+
+From the graph we can compare the absolute number of flights for each airline and destination but it's difficult to objectively compare the arrival delays of each company.
+
+Using the original data frame (df1) we can generate a graph which focuses on the delay rate.
+
+```{r graph delays by airline-destination}
+p <- ggplot(data = df1, aes(x = airline, y = delayedprct, fill = airline))
+p <- p + scale_y_continuous(labels = scales::percent)
+p <- p + theme(legend.position = "none")
+#p <- p + scale_fill_manual(values=c('#01426A','#8D0013'))
+p <- p + geom_bar(stat = "identity", width = 0.95, position = "stack")
+p <- p + facet_grid(. ~ city)
+p
+```
+
+It's now clear that Amwest has a higher percentage of delayed flights, compared to Alaska. At one extreme, the Amwest flight to San Francisco is delayed almost 30% of the time while the most punctual flight is to Phoenix, via Alaska. As this point, it would seem like Alaska is clearly the superior airline since it has a lower proportion of delayed flights for all destinations.
+
+```{r table delays by airline}
+df3 <- df1 %>%
+  group_by(airline) %>%
+  summarise(delayed = sum(delayed),
+  ontime = sum(ontime)) %>%
+  mutate(totflights = ontime + delayed,
+  delayedprct = delayed / totflights)
+
+(df3)
+```
+
+```{r graph delays by airline}
+p <- ggplot(data = df3, aes(x = airline, y = delayedprct, fill = airline))
+p <- p + scale_y_continuous(labels = scales::percent)
+p <- p + theme(legend.position = "none")
+p <- p + geom_bar(stat = "identity", width = 0.95, position = "stack")
+p
+```
+
+If we aggregate all the flights by airline, we find an interesting reversal; Alaska actually has a higher proportion of delayed flights. After studying the data more carefully, we find that Amwest has an unusually high number of flights to Phoenix (5255) with a relatively low delayed flight rate of just 7.9%. 
+
+```{r table delays by destination}
+df4 <-
+  df1 %>% group_by(city) %>% 
+  summarise(delayed = sum(delayed),
+            ontime = sum(ontime)) %>%
+  mutate(
+  totflights = ontime + delayed,
+  delayedprct = delayed / totflights) %>% 
+  arrange(desc(delayedprct))
+
+(df4)
+```
+
+
+```{r graph delays by destination}
+p <- ggplot(data = df4, aes(x = city, y = delayedprct, fill = city))
+p <- p + scale_y_continuous(labels = scales::percent)
+p <- p + theme(legend.position = "none")
+p <- p + geom_bar(stat = "identity", width = 0.95, position = "stack")
+p
+```
+
+Finally, the graph above shows us the delay rates for each destination. As we discussed above, Amwest the majority of fights to Phoenix with a low delay rate. San Francisco has the highest delayed flight rate and both airlines perform comparably.
+
+#Conclusions
+
+From a passenger's perspective, it seems that Alaska is the better choice since it has a lower delayed flight percentage for all destinations. As a company, Amwest seems to be more successful since it runs almost twice as many flights while maintaining a lower delayed flight rate overall.
+
